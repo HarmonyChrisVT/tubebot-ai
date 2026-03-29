@@ -1,0 +1,13 @@
+node_modules/
+dist/
+__pycache__/
+*.pyc
+*.pyo
+.env
+*.db
+data/
+logs/
+*.mp3
+*.mp4
+*.png
+.DS_Store
