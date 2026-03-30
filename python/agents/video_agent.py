@@ -163,29 +163,42 @@ class FFmpegAssembler:
 
     def mix_audio(self, video_path: Path, audio_path: str,
                   audio_dur: float, dest: Path) -> Path:
-        """Replace video audio with voiceover; trim to audio duration."""
+        """Replace video audio with voiceover; trim to audio duration.
+
+        Note: the silent video is already longer than audio_dur (clip-looping
+        in _assemble_video adds 2 extra clips), so no -stream_loop needed.
+        Using -c:v copy with -stream_loop produces corrupted timestamps.
+        """
         self._run(
-            "-stream_loop", "-1", "-i", video_path,
+            "-i", video_path,
             "-i", audio_path,
             "-t", audio_dur,
             "-map", "0:v:0",
             "-map", "1:a:0",
             "-c:v", "copy",
             "-c:a", "aac", "-b:a", "192k",
-            "-shortest",
             dest,
         )
         return dest
 
+    # DejaVu Bold is installed by fonts-dejavu-core in the Dockerfile.
+    # Specifying fontfile explicitly avoids needing fontconfig to be configured.
+    _FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+
     def add_title_overlay(self, video_path: Path, title: str, dest: Path) -> Path:
         """Burn a semi-transparent title card onto the opening 5 seconds."""
         safe = title.replace("\\", "").replace("'", "").replace(":", " -")[:72]
+
+        font_clause = (
+            f":fontfile={self._FONT}" if Path(self._FONT).exists() else ""
+        )
         drawtext = (
             f"drawtext=text='{safe}'"
+            f"{font_clause}"
             ":fontcolor=white:fontsize=54"
             ":x=(w-text_w)/2:y=h*0.84"
             ":box=1:boxcolor=black@0.60:boxborderw=14"
-            ":enable='between(t,0,5)'"
+            ":enable='between(t\\,0\\,5)'"
         )
         self._run(
             "-i", video_path,
@@ -270,25 +283,49 @@ class VideoAgent:
             self.session.commit()
 
     async def _assemble_video(self, project: VideoProject) -> Path:
+        """
+        Async entry point.
+        - Clip downloading is async (aiohttp).
+        - All FFmpeg work runs in a thread pool so the event loop stays free.
+        """
         video_dir = Path(config.video.video_dir)
         video_dir.mkdir(parents=True, exist_ok=True)
         clips_dir = video_dir / f"clips_{project.id}"
         clips_dir.mkdir(exist_ok=True)
 
-        audio_dur = self.ffmpeg._probe_duration(project.audio_path)
+        # Probe audio duration in a thread (subprocess call)
+        audio_dur = await asyncio.to_thread(
+            self.ffmpeg._probe_duration, project.audio_path
+        )
         if audio_dur <= 0:
             raise ValueError(f"Cannot read audio duration: {project.audio_path}")
 
-        # 1. Download Pexels clips
+        # Download Pexels clips asynchronously
         raw_clips = await self._fetch_clips(project, clips_dir, audio_dur)
 
-        # 2. Fallback to solid-colour clip if nothing downloaded
+        # All FFmpeg processing runs in a thread to avoid blocking the event loop
+        final = await asyncio.to_thread(
+            self._render_video, project, video_dir, clips_dir, raw_clips, audio_dur
+        )
+        return final
+
+    def _render_video(
+        self,
+        project: VideoProject,
+        video_dir: Path,
+        clips_dir: Path,
+        raw_clips: List[Path],
+        audio_dur: float,
+    ) -> Path:
+        """Synchronous FFmpeg pipeline — runs in a thread pool."""
+
+        # 1. Fallback to solid-colour clip if nothing downloaded
         if not raw_clips:
             logger.warning("No Pexels clips found — using colour background fallback")
             fallback = clips_dir / "colour_fallback.mp4"
             raw_clips = [self.ffmpeg.make_colour_clip(fallback, CLIP_DURATION)]
 
-        # 3. Trim each clip to CLIP_DURATION seconds @ 1920x1080
+        # 2. Trim each clip to CLIP_DURATION seconds @ 1920x1080
         trimmed: List[Path] = []
         for i, clip in enumerate(raw_clips):
             dest = clips_dir / f"t_{i:04d}.mp4"
@@ -301,25 +338,25 @@ class VideoAgent:
         if not trimmed:
             raise RuntimeError("All clip trims failed — check FFmpeg installation")
 
-        # 4. Loop clips to cover full audio duration
+        # 3. Loop trimmed clips until they cover the full audio duration
         needed = int(audio_dur / CLIP_DURATION) + 2
         looped = (trimmed * (needed // len(trimmed) + 1))[:needed]
 
-        # 5. Concatenate → silent video
+        # 4. Concatenate → silent video (already >= audio_dur long)
         silent = clips_dir / "silent.mp4"
         self.ffmpeg.concatenate_clips(looped, silent)
 
-        # 6. Mix voiceover
+        # 5. Mix voiceover
         mixed = clips_dir / "mixed.mp4"
         self.ffmpeg.mix_audio(silent, project.audio_path, audio_dur, mixed)
 
-        # 7. Burn in title overlay → final output
+        # 6. Burn in title overlay → final output
         title = project.yt_title or project.topic or "TubeBot AI"
         ts = datetime.utcnow().strftime("%Y%m%d%H%M%S")
         final = video_dir / f"video_{project.id}_{ts}.mp4"
         self.ffmpeg.add_title_overlay(mixed, title, final)
 
-        # 8. Clean up working directory
+        # 7. Clean up working directory
         self._cleanup(clips_dir)
         return final
 

@@ -8,7 +8,9 @@ RUN apt-get update && apt-get install -y \
     nginx \
     gettext-base \
     fonts-dejavu-core \
+    fontconfig \
     ffmpeg \
+    && fc-cache -fv \
     && rm -rf /var/lib/apt/lists/*
 
 COPY python/requirements.txt ./
