@@ -29,9 +29,9 @@ class YouTubeConfig:
 
 
 @dataclass
-class PictoryConfig:
+class PexelsConfig:
     api_key: str = ""
-    api_base: str = "https://api.pictory.ai/pictoryapis/v1"
+    # Free tier: 200 req/hour, 20 000 req/month — no paid plan needed.
 
     @property
     def is_configured(self) -> bool:
@@ -72,7 +72,7 @@ class VideoConfig:
 class AppConfig:
     openai: OpenAIConfig = field(default_factory=OpenAIConfig)
     youtube: YouTubeConfig = field(default_factory=YouTubeConfig)
-    pictory: PictoryConfig = field(default_factory=PictoryConfig)
+    pexels: PexelsConfig = field(default_factory=PexelsConfig)
     trend: TrendConfig = field(default_factory=TrendConfig)
     video: VideoConfig = field(default_factory=VideoConfig)
     database_path: str = "/app/data/tubebot.db"
@@ -89,7 +89,7 @@ def load_config_from_env():
     config.youtube.channel_id = os.getenv("YOUTUBE_CHANNEL_ID", "")
     config.youtube.schedule_hours_ahead = int(os.getenv("YOUTUBE_SCHEDULE_HOURS", "24"))
 
-    config.pictory.api_key = os.getenv("PICTORY_API_KEY", "")
+    config.pexels.api_key = os.getenv("PEXELS_API_KEY", "")
 
     config.database_path = os.getenv("DATABASE_PATH", config.database_path)
 

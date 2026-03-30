@@ -7,6 +7,7 @@ pydantic>=2.5.3
 pydantic-settings>=2.1.0
 requests>=2.31.0
 aiohttp>=3.9.1
+aiofiles>=23.2.1
 beautifulsoup4>=4.12.2
 edge-tts>=6.1.9
 google-api-python-client>=2.100.0
@@ -15,3 +16,7 @@ google-auth-oauthlib>=1.0.0
 Pillow>=10.2.0
 psutil>=5.9.8
 pytrends>=4.9.2
+# NOTE: FFmpeg (ffmpeg + ffprobe) must be installed as a system package.
+# Ubuntu/Debian: sudo apt install ffmpeg
+# macOS:         brew install ffmpeg
+# Docker:        see Dockerfile (apt install ffmpeg)

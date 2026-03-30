@@ -228,10 +228,11 @@ async def health():
         "error": None if config.youtube.is_configured else "not configured",
     }
 
-    # Pictory
-    results["pictory"] = {
-        "ok": config.pictory.is_configured,
-        "note": "Pictory configured" if config.pictory.is_configured else "not configured — video manifests will be created instead",
+    # Pexels (free stock footage for FFmpeg video assembly)
+    results["pexels"] = {
+        "ok": config.pexels.is_configured,
+        "note": "Pexels API key configured" if config.pexels.is_configured
+                else "not configured — set PEXELS_API_KEY for stock footage (free at pexels.com/api); will fall back to solid-colour background",
     }
 
     return {"healthy": all(v["ok"] for v in results.values()), "services": results}
